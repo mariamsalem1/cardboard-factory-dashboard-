@@ -225,6 +225,14 @@ def persist_sql(tel: pd.DataFrame, res: pd.DataFrame) -> None:
         conn.commit()
 
 
+def _write_standins(tel: pd.DataFrame, res: pd.DataFrame) -> None:
+    """Best-effort CSV dump. Vercel functions cannot write the repo directory."""
+    try:
+        write_kaggle_compatible_csvs(tel, res)
+    except OSError:
+        pass
+
+
 def load_frames() -> tuple[pd.DataFrame, pd.DataFrame, str]:
     try_kaggle_download()
     # Ignore CSVs we ourselves write as Kaggle-shaped stand-ins; only remap
@@ -253,11 +261,11 @@ def load_frames() -> tuple[pd.DataFrame, pd.DataFrame, str]:
 
     if piade_df is None and res_df is None:
         tel, res = generate_mill_frames()
-        write_kaggle_compatible_csvs(tel, res)
+        _write_standins(tel, res)
         source = "generated"
     else:
         tel, res = merge_with_generated(piade_df, res_df)
-        write_kaggle_compatible_csvs(tel, res)
+        _write_standins(tel, res)
         source = "kaggle_mixed" if piade_df is not None and res_df is not None else (
             "kaggle_piade" if piade_df is not None else "kaggle_smart"
         )

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -21,6 +22,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 
 _REPLAY = int(os.environ.get("MILL_REPLAY_SECONDS", "60"))
 _DIST = Path(__file__).resolve().parents[2] / "web" / "dist"
+_ON_VERCEL = bool(os.environ.get("VERCEL"))
+_last_replay = time.monotonic()
+_replay_lock = asyncio.Lock()
 
 
 async def _replay_loop(stop: asyncio.Event) -> None:
@@ -47,6 +51,13 @@ async def lifespan(_app: FastAPI):
     if not ok:
         STORE.db_message = msg
         log.warning("SQL ping failed: %s — serving from in-memory playback", msg)
+    if _ON_VERCEL:
+        global _last_replay
+        _last_replay = time.monotonic()
+        log.info("Serverless replay advances on API requests (%ss)", _REPLAY)
+        yield
+        return
+
     stop = asyncio.Event()
     task = asyncio.create_task(_replay_loop(stop))
     log.info("Replay loop started (%ss)", _REPLAY)
@@ -61,6 +72,22 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Cardboard Plant SCADA", default_response_class=ORJSONResponse, lifespan=lifespan)
+
+
+@app.middleware("http")
+async def _advance_replay_on_vercel(request, call_next):
+    """Vercel does not keep the background replay task alive between requests."""
+    global _last_replay
+    if _ON_VERCEL and request.url.path.startswith("/api") and STORE.loaded:
+        async with _replay_lock:
+            now = time.monotonic()
+            if now - _last_replay >= _REPLAY:
+                _last_replay = now
+                try:
+                    await asyncio.to_thread(STORE.tick)
+                except Exception:
+                    log.exception("Replay tick failed")
+    return await call_next(request)
 
 
 @app.get("/api/healthz")

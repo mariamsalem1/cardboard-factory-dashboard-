@@ -46,7 +46,6 @@ def build_csv() -> tuple[bytes, str]:
 
 def build_pdf() -> tuple[bytes, str]:
     data = preview()
-    _OUT.mkdir(parents=True, exist_ok=True)
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, title="Cardboard Plant Cycle Report")
     styles = getSampleStyleSheet()
@@ -78,6 +77,9 @@ def build_pdf() -> tuple[bytes, str]:
     story.append(table)
     doc.build(story)
     name = f"cardboard-plant-cycle-{data['cycle_id']}.pdf"
-    path = _OUT / name
-    path.write_bytes(buf.getvalue())
+    try:
+        _OUT.mkdir(parents=True, exist_ok=True)
+        (_OUT / name).write_bytes(buf.getvalue())
+    except OSError:
+        pass
     return buf.getvalue(), name

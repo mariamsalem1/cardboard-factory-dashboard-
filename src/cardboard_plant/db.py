@@ -7,7 +7,10 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-import pyodbc
+try:
+    import pyodbc
+except ImportError:  # Vercel has no SQL Server ODBC driver
+    pyodbc = None
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -17,6 +20,8 @@ _SCHEMA_SQL = _REPO / "sql" / "001_schema.sql"
 
 
 def _driver() -> str:
+    if pyodbc is None:
+        raise RuntimeError("pyodbc is not installed; SQL Server is unavailable on this host.")
     drivers = pyodbc.drivers()
     for name in ("ODBC Driver 18 for SQL Server", "ODBC Driver 17 for SQL Server"):
         if name in drivers:
@@ -55,6 +60,8 @@ def _build_connection_string(database: str | None = None) -> str:
 
 
 def get_connection(database: str | None = None) -> pyodbc.Connection:
+    if pyodbc is None:
+        raise RuntimeError("pyodbc is not installed; SQL Server is unavailable on this host.")
     return pyodbc.connect(_build_connection_string(database), timeout=8)
 
 
